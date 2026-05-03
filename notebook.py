@@ -24,10 +24,11 @@ def _():
 @app.cell
 def _():
     import torch
+    from torch import nn
     import numpy as np
     import matplotlib.pyplot as plt
 
-    return np, plt
+    return nn, np, plt, torch
 
 
 @app.cell(hide_code=True)
@@ -95,7 +96,6 @@ def _(mo, np, plt):
     plt.grid(True)
     plt.legend()
     mo.center(plt.gcf())
-
     return
 
 
@@ -133,6 +133,74 @@ def _(mo):
     v = \exp \lambda_2
     $$
     """)
+    return
+
+
+@app.cell
+def _(nn, torch):
+    class Shooter(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.nn = nn.Sequential(
+                nn.Linear(1, 512),
+                nn.ReLU(),
+                nn.Linear(512, 512),
+                nn.ReLU(),
+                nn.Linear(512, 2),
+            )
+
+        def forward(self, input):
+            input = input.unsqueeze(-1)
+            output = self.nn(input)
+            theta = torch.arctan(output[..., 0]) / 2 + torch.pi / 4
+            v = torch.exp(output[..., 1])
+            output = torch.stack([theta, v], dim=-1)
+            return output
+
+    return (Shooter,)
+
+
+@app.cell
+def _(Shooter, torch):
+    torch.manual_seed(42)
+    _shooter = Shooter()
+    input = torch.tensor([1.0, 2.0, 3.0])
+    with torch.no_grad():
+        output = _shooter(input)
+    output
+    return
+
+
+@app.cell
+def _(torch):
+    g = 10.0
+    def loss_fn(d, theta_v):
+        theta = theta_v[..., 0]
+        v = theta_v[..., 1]
+        x = v * v * torch.sin(2 * theta) / g
+        return (d - x).square().mean()
+
+    return (loss_fn,)
+
+
+@app.cell
+def _(Shooter, loss_fn, torch):
+    def train():
+        shooter = Shooter()
+        distance = torch.rand(1000) * 100.0 + 50.0 # random distance data in the [50, 150] range
+        optimizer = torch.optim.Adam(shooter.parameters(), lr=1e-3)
+        n_epochs = 1000
+        for epoch in range(n_epochs):
+            optimizer.zero_grad()
+            theta_v = shooter(distance)
+            loss = loss_fn(distance, theta_v)
+            loss.backward()
+            optimizer.step()
+            if epoch % 100 == 0:
+                print(f"epoch {epoch}, loss {loss.item():.4f}")
+        return shooter
+
+    shooter = train()
     return
 
 

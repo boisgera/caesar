@@ -6,6 +6,7 @@ platforms = ["linux-64"]
 version = "0.1.0"
 
 [tasks]
+dev = "marimo edit notebook.py"
 
 [dependencies]
 python = ">=3.14.4,<3.15"
