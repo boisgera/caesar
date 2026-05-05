@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.4"
+__generated_with = "0.23.5"
 app = marimo.App(width="medium")
 
 
@@ -39,6 +39,12 @@ def _(mo):
     return
 
 
+@app.cell
+def _():
+    g = 10.0
+    return (g,)
+
+
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
@@ -70,6 +76,26 @@ def _(mo):
     $t = (2 v \sin \theta) / g$ which leads to
     $$x = (2 v^2 \sin \theta \cos \theta)/ g = v^2 \frac{\sin 2\theta}{g}.$$
     """)
+    return
+
+
+@app.cell
+def _(g, np, plt):
+    def dist(v, theta):
+        return v * v * np.sin(2 * theta) / g
+
+    _v = np.linspace(0, 200, 1000)
+    _theta = np.linspace(0, np.pi / 2, 1000)
+    V, T = np.meshgrid(_v, _theta)
+    D = dist(V, T)
+
+    fig, ax = plt.subplots()
+    cf = ax.contourf(V, T, D, levels=20, cmap='RdBu_r')
+    fig.colorbar(cf, ax=ax, label='distance')
+    plt.xlabel("velocity")
+    plt.ylabel("angle")
+    #ax.set_aspect('equal')
+    plt.show()
     return
 
 
@@ -172,8 +198,7 @@ def _(Shooter, torch):
 
 
 @app.cell
-def _(torch):
-    g = 10.0
+def _(g, torch):
     def loss_fn(d, theta_v):
         theta = theta_v[..., 0]
         v = theta_v[..., 1]
@@ -185,19 +210,32 @@ def _(torch):
 
 @app.cell
 def _(Shooter, loss_fn, torch):
-    def train():
+    def train(num_epochs=1_000):
+        torch.manual_seed(42)
         shooter = Shooter()
-        distance = torch.rand(1000) * 100.0 + 50.0 # random distance data in the [50, 150] range
-        optimizer = torch.optim.Adam(shooter.parameters(), lr=1e-3)
-        n_epochs = 1000
-        for epoch in range(n_epochs):
+        optimizer = torch.optim.Adam(shooter.parameters(), lr=1e-9)
+    
+        for epoch in range(num_epochs):
             optimizer.zero_grad()
+        
+            # 1000 random distances in the [50, 150] range
+            distance = torch.tensor(10.0)
+            #torch.rand(1000) * 100.0 + 50.0 
             theta_v = shooter(distance)
-            loss = loss_fn(distance, theta_v)
+            eps = 1e-3
+            v = theta_v[..., 1]
+            loss = loss_fn(distance, theta_v) + eps * (v * v).mean() 
+            if epoch % 100 == 0:
+                print(f"epoch {epoch}")
+                print(40 * "-")
+                print(f"loss = {loss.item():.1f}")
+                print(f"distance = {distance.detach()}")
+                print(f"theta_v = {theta_v.detach()}")
+                print()
+        
             loss.backward()
             optimizer.step()
-            if epoch % 100 == 0:
-                print(f"epoch {epoch}, loss {loss.item():.4f}")
+        
         return shooter
 
     shooter = train()
