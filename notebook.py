@@ -79,24 +79,40 @@ def _(mo):
     return
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    The Python Array API Standard defines a common interface. Both NumPy (≥ 1.22 via numpy.array_api) and PyTorch support it:
+    ```python
+    def softmax(x, /, *, axis=-1):
+        xp = x.__array_namespace__()   # get the right namespace (np or torch)
+        e = xp.exp(x - xp.max(x, axis=axis, keepdims=True))
+        return e / xp.sum(e, axis=axis, keepdims=True)
+    ```
+    `__array_namespace__()` is the key: it returns numpy, torch, or whatever library owns `x`, so you call the right ops without any isinstance. This preserves gradients for torch, device placement, dtype, etc.
+    """)
+    return
+
+
 @app.cell
 def _(g, np, plt):
-    def dist(v, theta):
+    # TODO: torch and numpy version
+    def dist(theta, v):
         return v * v * np.sin(2 * theta) / g
 
-    _v = np.linspace(0, 200, 1000)
     _theta = np.linspace(0, np.pi / 2, 1000)
-    V, T = np.meshgrid(_v, _theta)
-    D = dist(V, T)
+    _v = np.linspace(0, 200, 1000)
+    T, V = np.meshgrid(_theta, _v)
+    D = dist(T, V)
 
     fig, ax = plt.subplots()
-    cf = ax.contourf(V, T, D, levels=20, cmap='RdBu_r')
+    cf = ax.contourf(T, V, D, levels=20, cmap='RdBu_r')
     fig.colorbar(cf, ax=ax, label='distance')
-    plt.xlabel("velocity")
-    plt.ylabel("angle")
+    plt.ylabel("velocity")
+    plt.xlabel("angle")
     #ax.set_aspect('equal')
     plt.show()
-    return
+    return (dist,)
 
 
 @app.cell(hide_code=True)
@@ -113,15 +129,18 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo, np, plt):
-    theta = np.linspace(0.0, np.pi / 2, 1000)
-    plt.plot(theta, np.sin(2*theta), label=r"$\sin 2\theta$")
-    ticks = [0, np.pi / 4, np.pi / 2]
-    labels = ["$0$", r"$\frac{\pi}{4}$", r"$\frac{\pi}{2}$"]
-    plt.gca().set_xticks(ticks)
-    plt.gca().set_xticklabels(labels, fontsize=13)
-    plt.grid(True)
-    plt.legend()
-    mo.center(plt.gcf())
+    def _():
+        theta = np.linspace(0.0, np.pi / 2, 1000)
+        plt.plot(theta, np.sin(2*theta), label=r"$\sin 2\theta$")
+        ticks = [0, np.pi / 4, np.pi / 2]
+        labels = ["$0$", r"$\frac{\pi}{4}$", r"$\frac{\pi}{2}$"]
+        plt.gca().set_xticks(ticks)
+        plt.gca().set_xticklabels(labels, fontsize=13)
+        plt.grid(True)
+        plt.legend()
+        mo.center(plt.gcf())
+
+    _()
     return
 
 
@@ -165,14 +184,12 @@ def _(mo):
 @app.cell
 def _(nn, torch):
     class Shooter(nn.Module):
-        def __init__(self):
+        def __init__(self, d=100):
             super().__init__()
             self.nn = nn.Sequential(
-                nn.Linear(1, 512),
+                nn.Linear(1, d),
                 nn.ReLU(),
-                nn.Linear(512, 512),
-                nn.ReLU(),
-                nn.Linear(512, 2),
+                nn.Linear(d, 2),
             )
 
         def forward(self, input):
@@ -210,35 +227,93 @@ def _(g, torch):
 
 @app.cell
 def _(Shooter, loss_fn, torch):
-    def train(num_epochs=1_000):
-        torch.manual_seed(42)
-        shooter = Shooter()
-        optimizer = torch.optim.Adam(shooter.parameters(), lr=1e-9)
-    
-        for epoch in range(num_epochs):
+    def train(d=1000, n=100_000, lr=1e-7, eps=1e-9, verbose=False, seed=0):
+        torch.manual_seed(seed)
+        shooter = Shooter(d=d)
+        optimizer = torch.optim.Adam(shooter.parameters(), lr=lr)
+
+        losses = []
+        for epoch in range(n):
             optimizer.zero_grad()
-        
-            # 1000 random distances in the [50, 150] range
-            distance = torch.tensor(10.0)
-            #torch.rand(1000) * 100.0 + 50.0 
+            # 1000 distances
+            distance = torch.linspace(1.0, 20.0, 1000)
             theta_v = shooter(distance)
-            eps = 1e-3
             v = theta_v[..., 1]
             loss = loss_fn(distance, theta_v) + eps * (v * v).mean() 
+            losses.append(loss.item())
             if epoch % 100 == 0:
-                print(f"epoch {epoch}")
-                print(40 * "-")
-                print(f"loss = {loss.item():.1f}")
-                print(f"distance = {distance.detach()}")
-                print(f"theta_v = {theta_v.detach()}")
-                print()
-        
+                if verbose:
+                    print(f"epoch {epoch}")
+                    print(40 * "-")
+                    print(f"loss = {loss.item():.17f}")
+                    #print(f"distance = {distance.detach()}")
+                    #print(f"theta_v = {theta_v.detach()}")
+                    print()
+
             loss.backward()
             optimizer.step()
-        
-        return shooter
 
-    shooter = train()
+        return shooter, losses
+
+    return (train,)
+
+
+@app.cell
+def _(train):
+    shooter, losses = train(d=100, n=10_000, lr=1e-4)
+    return losses, shooter
+
+
+@app.cell
+def _(losses, plt):
+    plt.figure(figsize=(10, 2))
+    plt.yscale('log')
+    plt.grid()
+    plt.plot(losses)
+    return
+
+
+@app.cell
+def _(np, plt, shooter, torch):
+    ds = torch.linspace(1.0, 20.0, 1000) 
+    with torch.no_grad():
+        _theta_v = shooter(ds)
+        _theta, _v = _theta_v[..., 0], _theta_v[..., 1]
+    _, axes = plt.subplots(2, 1, sharex=True, figsize=(10, 4))
+    axes[0].plot(ds, _theta)
+    axes[0].set_ylim(0.0, np.pi / 2)
+    axes[0].grid()
+    axes[1].plot(ds, _v)
+    axes[1].grid()
+    plt.gcf()
+    return
+
+
+@app.cell
+def _(dist, plt, shooter, torch):
+    _ds = torch.linspace(1.0, 20.0, 1000) 
+    with torch.no_grad():
+        _theta_v = shooter(_ds)
+        _theta, _v = _theta_v[..., 0], _theta_v[..., 1]
+    dp = dist(_theta, _v)
+    dp
+    plt.plot(_ds, dp)
+    plt.xlim(0.0, 20.0)
+    plt.ylim(0.0, 20.0)
+    plt.gca().set_aspect("equal")
+    plt.grid()
+    plt.gcf()
+    return
+
+
+@app.cell
+def _(dist, shooter, torch):
+    with torch.no_grad():
+        theta_v = shooter(torch.tensor(10.0))
+    print(torch.pi/4)
+    print(theta_v)
+    theta, v = theta_v
+    dist(theta, v)
     return
 
 
