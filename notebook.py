@@ -239,15 +239,16 @@ def _(Shooter, loss_fn, torch):
             distance = torch.linspace(1.0, 20.0, 1000)
             theta_v = shooter(distance)
             v = theta_v[..., 1]
-            loss = loss_fn(distance, theta_v) + eps * (v * v).mean() 
+            loss = loss_fn(distance, theta_v) + eps * (v * v).mean()
             losses.append(loss.item())
+
+            print( list(shooter.parameters()) )
+
             if epoch % 100 == 0:
                 if verbose:
                     print(f"epoch {epoch}")
                     print(40 * "-")
                     print(f"loss = {loss.item():.17f}")
-                    #print(f"distance = {distance.detach()}")
-                    #print(f"theta_v = {theta_v.detach()}")
                     print()
 
             loss.backward()
@@ -260,7 +261,7 @@ def _(Shooter, loss_fn, torch):
 
 @app.cell
 def _(train):
-    shooter, losses = train(d=100, n=10_000, lr=1e-4)
+    shooter, losses = train(d=100, n=10_000, lr=1e-4, verbose=True)
     return losses, shooter
 
 
